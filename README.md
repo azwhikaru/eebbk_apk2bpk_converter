@@ -1,5 +1,5 @@
 # apk2bpk
-compress android apk 2 bbk smart ass bpk full encryption format
+convert android apk to bbk bpk full encryption format
 # how encode and decode work
 obviously use xor
 # Thank to
