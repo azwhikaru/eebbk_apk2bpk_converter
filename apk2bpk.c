@@ -135,7 +135,7 @@ static int xor(uint8_t* val, uint32_t size, const uint8_t *xorCode) {
     if (size == 0)
         return -1;
     int xlen = strlen((const char*)xorCode);
-    for (int i=0;i<size;i++)
+    for (uint32_t i=0;i<size;i++)
         val[i] = xorCode[(i)%xlen] ^ val[i];
     return 0;
 }
@@ -170,7 +170,7 @@ static inline void parse_magic(uint32_t *magic) {
     *magic = (cfg.mode == CFG_ENCODE) ? pk2bpk(*magic) : bpk2pk(*magic);
 }
 
-static int parse_zip(char* input, char* output, int mode) {
+static int parse_zip(char* input, char* output, int mode, int verbose) {
     int ret = 0;
     int fdi, fdo;
     struct local_file_header hl;
@@ -181,10 +181,10 @@ static int parse_zip(char* input, char* output, int mode) {
     off_t offset = 0, local_offset = 0, sig_offset = 0;
     uint8_t *buf;
 
-if (access(cfg.output, F_OK)==0) {
-        ret = remove(cfg.output);
+if (access(output, F_OK)==0) {
+        ret = remove(output);
         if (ret) {
-            printf("Error: Cannot remove file %s\n", cfg.output);
+            printf("Error: Cannot remove file %s\n", output);
         }
     }
 
@@ -204,17 +204,17 @@ if (access(cfg.output, F_OK)==0) {
         close(fdi); close(fdo);
         return 1;
     }
-    if (hl.magic == bbk_local_file_magic && cfg.mode != CFG_DECODE) {
+    if (hl.magic == bbk_local_file_magic && mode != CFG_DECODE) {
         fprintf(stderr, "File seems already encrypted.\n");
         close(fdi);
         return 1;
     }
 
-    printf("Converting [%s] -> [%s] ... \n", cfg.input, cfg.output);
+    printf("Converting [%s] -> [%s] ... \n", input, output);
 
     // Get file size
     struct stat st;
-    stat(cfg.input, &st);
+    stat(input, &st);
     //fsize = st.st_size;
 
     // use mmap get magic
@@ -227,11 +227,11 @@ if (access(cfg.output, F_OK)==0) {
     // parse
     // Get end struct
     offset = get_eocd_offset(mem, st.st_size);
-    if (cfg.verbose) {
+    if (verbose) {
         printf("Find EOCD at              :\t%ld\n", offset);
     }
     if (offset == 0) {
-        printf("Error: Cannot find eocd magic %08x at end\n", (cfg.mode == CFG_ENCODE ? end_of_central_magic : bbk_end_of_central_magic));
+        printf("Error: Cannot find eocd magic %08x at end\n", (mode == CFG_ENCODE ? end_of_central_magic : bbk_end_of_central_magic));
         return EBADF;
     }
     ptr = mem + offset;
@@ -239,13 +239,13 @@ if (access(cfg.output, F_OK)==0) {
     parse_magic(&heo.magic);
     xor((uint8_t*)&heo+sizeof(heo.magic), sizeof(heo)-sizeof(heo.magic), xorCodeEOCD);
     pwrite(fdo, &heo, sizeof(heo), offset);
-    if (cfg.mode == CFG_ENCODE) {
+    if (mode == CFG_ENCODE) {
         // convert back cause below code cannot detect correctly
         xor((uint8_t*)&heo+sizeof(heo.magic), sizeof(heo)-sizeof(heo.magic), xorCodeEOCD);
     }
     // write eocd extra
     if (heo.extra_length != 0U) {
-        if (cfg.verbose) {
+        if (verbose) {
             printf("Find End Extra at         :\t%ld\n", offset+sizeof(heo));
         }
         ptr = mem + offset + sizeof(heo);
@@ -255,7 +255,7 @@ if (access(cfg.output, F_OK)==0) {
         ptr += sizeof(heo);
         write(fdo, ptr, heo.extra_length);
     }
-    if (cfg.verbose) {
+    if (verbose) {
         printf("Find Central Direcotry Num: \t%u\n"
                "Find Central Total size   : \t%u\n"
                "Find Central Offset at dec: \t%u | hex %08x\n",
@@ -266,7 +266,7 @@ if (access(cfg.output, F_OK)==0) {
     offset = heo.central_start_offset;
     for (uint16_t i=1;i<=heo.total_central_directory_num;i++) {
         //printf("Parse central directory offset at: %ld \t| %08x\n", offset, (uint32_t)offset);
-        if (cfg.verbose) {
+        if (verbose) {
             printf("[ %06u / %06u ] Parsing ... \r", i, heo.total_central_directory_num);
             fflush(stdout);
             if (i == heo.total_central_directory_num) {
@@ -276,7 +276,7 @@ if (access(cfg.output, F_OK)==0) {
 
         ptr = mem + offset;
         memcpy(&hds, ptr, sizeof(hds));
-        if (cfg.mode == CFG_DECODE) {
+        if (mode == CFG_DECODE) {
             xor((uint8_t*)&hds+sizeof(hds.magic), sizeof(hds)-sizeof(hds.magic), xorCodeCD);
         }
         flag = hds.flag;
@@ -293,7 +293,7 @@ if (access(cfg.output, F_OK)==0) {
         
         memcpy(buf, (uint8_t*)&hds + sizeof(hds.magic), sizeof(hds) - sizeof(hds.magic));
         memcpy(buf + sizeof(hds) - sizeof(hds.magic), ptr, hds.extra_length + hds.annotation_length + hds.file_name_length);
-        if (cfg.mode == CFG_ENCODE) {
+        if (mode == CFG_ENCODE) {
             xor(buf, data_len, xorCodeCD);
         } else {
             xor(buf, sizeof(hds)-sizeof(hds.magic), xorCodeCD);
@@ -316,7 +316,7 @@ if (access(cfg.output, F_OK)==0) {
         ptr = mem + local_offset;
         memcpy(&hl, ptr, sizeof(hl));
 
-        if (cfg.mode == CFG_DECODE) {
+        if (mode == CFG_DECODE) {
             xor((uint8_t*)&hl+sizeof(hl.magic), sizeof(hl)-sizeof(hl.magic)-sizeof(hl.extra_field_length), xorCodeLOCAL);
         }
 
@@ -342,18 +342,18 @@ if (access(cfg.output, F_OK)==0) {
             pwrite(fdo, &hdd, sizeof(hdd), local_offset+sizeof(hl)+hds.file_name_length+hds.extra_length+hds.compressed_size);
         }
 
-        if (cfg.mode == CFG_ENCODE) {
+        if (mode == CFG_ENCODE) {
             xor((uint8_t*)&hl+sizeof(hl.magic), sizeof(hl)-sizeof(hl.magic)-sizeof(hds.extra_length), xorCodeLOCAL);
         }
 
         if (!(flag & 0x8)) { // 0xFFFFFFFF
-            hl.crc32 = (cfg.mode == CFG_ENCODE) ? (uint32_t)-1 : hds.crc32;
-            hl.compressed_size = (cfg.mode == CFG_ENCODE) ? (uint32_t)-1 : hds.compressed_size;
-            hl.uncompressed_size = (cfg.mode == CFG_ENCODE) ? (uint32_t)-1 : hds.uncompressed_size;
+            hl.crc32 = (mode == CFG_ENCODE) ? (uint32_t)-1 : hds.crc32;
+            hl.compressed_size = (mode == CFG_ENCODE) ? (uint32_t)-1 : hds.compressed_size;
+            hl.uncompressed_size = (mode == CFG_ENCODE) ? (uint32_t)-1 : hds.uncompressed_size;
         } else {
-            hl.crc32 = (cfg.mode == CFG_ENCODE) ? 0U : hds.crc32;
-            hl.compressed_size = (cfg.mode == CFG_ENCODE) ? 0U : hds.compressed_size;
-            hl.uncompressed_size = (cfg.mode == CFG_ENCODE) ? 0U : hds.uncompressed_size;
+            hl.crc32 = (mode == CFG_ENCODE) ? 0U : hds.crc32;
+            hl.compressed_size = (mode == CFG_ENCODE) ? 0U : hds.compressed_size;
+            hl.uncompressed_size = (mode == CFG_ENCODE) ? 0U : hds.uncompressed_size;
         }
         pwrite(fdo, &hl, sizeof(hl), local_offset);
         
@@ -371,7 +371,7 @@ if (access(cfg.output, F_OK)==0) {
     if (sig_offset < heo.central_start_offset) {
         ptr = mem + sig_offset;
         memcpy(&sig.size, ptr, sizeof(sig.size));
-        if (cfg.verbose) {
+        if (verbose) {
             printf("Find apk signature at     :\t%ld\n"
                    "Find apk signature Size   :\t%lu\n", sig_offset, sig.size);
         }
@@ -383,7 +383,7 @@ if (access(cfg.output, F_OK)==0) {
     // release
     munmap(mem, st.st_size);
     close(fdi); close(fdo);
-    chmod(cfg.output, 0755);
+    chmod(output, 0755);
     printf("Done!\n");
     return ret;
 }
@@ -457,6 +457,6 @@ int main(int argc, char** argv) {
             return EIO;
         }
     }
-    ret = parse_zip(cfg.input, cfg.output, cfg.mode);
+    ret = parse_zip(cfg.input, cfg.output, cfg.mode, cfg.verbose);
     return ret;
 }
