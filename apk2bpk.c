@@ -1,3 +1,6 @@
+#ifdef __MINGW32__ // Fix slow printf on mingw
+#define __USE_MINGW_ANSI_STDIO 0
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
