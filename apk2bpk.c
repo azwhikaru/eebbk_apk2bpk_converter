@@ -254,10 +254,6 @@ if (access(output, F_OK)==0) {
         ptr = mem + offset + sizeof(heo);
         pwrite(fdo, ptr, heo.extra_length, offset+sizeof(heo));
     }
-    if (heo.extra_length != 0U) {
-        ptr += sizeof(heo);
-        write(fdo, ptr, heo.extra_length);
-    }
     if (verbose) {
         printf("Find Central Direcotry Num: \t%u\n"
                "Find Central Total size   : \t%u\n"
