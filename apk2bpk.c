@@ -360,6 +360,7 @@ if (access(output, F_OK)==0) {
     
     // cpoy sig
     // from sig_offset -- heo.
+    sig_offset++;
     if (!sig_offset){
         printf("Error: This should not happen.\n\tSig offset has not found.\n");
         return EIO;
